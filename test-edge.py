@@ -13,20 +13,23 @@ chthr = 0.1   # threshold for change detection by average
 
 lconv = 0.1044  # um/pixel
 
-ffits = 0;
-fdata = 0;
-fsize = ();
+ffits = 0
+fdata = 0
+fsize = ()
+logout = 0
 
 pngborder = (255, 0, 0)
 pngindig  = (0, 0, 255)
 pngtick   = 10
 
 def main():
-    global fdata, fsize, chwid, rgstep, lconv
+    global fdata, fsize, chwid, rgstep, lconv, logout
+    print_config()
     open_fits(sys.argv[1])
 #    print '%d' % len(fsize)
     print 'Image size : x %d / y %d' % (fsize[0], fsize[1])
     cpos = (fsize[0] / 2, fsize[1] / 2)
+    calc_stat(cpos, chwid)
 #    print 'X+'
     cret_xp= check_rough((1, 0), cpos, rgstep, chwid)
 #    print 'X-'
@@ -70,13 +73,14 @@ def main():
     print 'Trans reg ', clen
 # make array for png output
     pngdata = [(255, 255, 255)] * ((pnghsize[0] * 2 + 1) * (pnghsize[1] * 2 + 1))
-    print pnghsize
-    print pngst
-    print pngls
+#    print pnghsize
+#    print pngst
+#    print pngls
     draw_edge(pnghsize, pngls, pngst, pngdata)
 # fine search
     cfine = ()
     for cid in range(0, emax):
+        logout_head('X+', cid)
         cl_x = clen[cid][0][1] - clen[cid][0][0]
         cl_y = clen[cid][1][1] - clen[cid][1][0]
         cf_xp = check_fine((1, 0), cposd[cid], chwid, clen[cid][0])
@@ -84,16 +88,19 @@ def main():
                 (cposd[cid][0] + clen[cid][0][0], cposd[cid][1] - chwid), 
                 (pnghsize[0] + pngst[cid][0] + 1, pnghsize[1] - chwid),
                 (cl_x, chwid * 2 + 1), pngdata)
+        logout_head('X-', cid)
         cf_xm = check_fine((-1, 0), cposd[cid], chwid, clen[cid][0])
         draw_image(pnghsize,
                 (cposd[cid][0] - clen[cid][0][0] - cl_x, cposd[cid][1] - chwid),
                 (pnghsize[0] - pngst[cid][0] - cl_x, pnghsize[1] - chwid),
                 (cl_x, chwid * 2 + 1), pngdata)
+        logout_head('Y+', cid)
         cf_yp = check_fine((0, 1), cposd[cid], chwid, clen[cid][1])
         draw_image(pnghsize,
                 (cposd[cid][0] - chwid, cposd[cid][1] + clen[cid][1][0]),
                 (pnghsize[0] - chwid, pnghsize[1] + pngst[cid][1] + 1), 
                 (chwid * 2 + 1, cl_y), pngdata)
+        logout_head('Y-', cid)
         cf_ym = check_fine((0, -1), cposd[cid], chwid, clen[cid][1])
         draw_image(pnghsize,
                 (cposd[cid][0] - chwid, cposd[cid][1] - clen[cid][1][0] - cl_y),
@@ -108,6 +115,7 @@ def main():
                 cf_yp - clen[cid][1][0] - 1, cf_ym - clen[cid][1][0] - 1)
 #        print '%d %d %d %d' % (cf_xp, cf_xm, cf_yp, cf_ym)
         cfine = cfine + ((cf_xd, cf_yd, cf_xc + cposd[cid][0], cf_yc + cposd[cid][1]), )
+        logout.write("\n")
         print 'DET : dia x = %.1f (%.2f um), y = %.1f (%.2f um) at (%.2f, %.2f)' % (
             cfine[cid][0], cfine[cid][0] * lconv, cfine[cid][1], 
             cfine[cid][1] * lconv, cfine[cid][2], cfine[cid][3])
@@ -126,19 +134,40 @@ def main():
     draw_center(pnghsize, pngdata)
     save_png(pnghsize, pngdata)
 
+def print_config():
+    print 'chwid %d, rgstep %d, chthr %f, lconv %f' % (chwid, rgstep, chthr, lconv)
+
+def logout_head(target, cid):
+    global logout
+    logout.write("# %s #%d " % (target, cid))
+
+def calc_stat(cpos, clen):
+    global fdata, fsize
+    ctgt = fdata[cpos[0] - clen : cpos[0] + clen + 1,
+                 cpos[1] - clen : cpos[1] + clen + 1]
+    print 'STATISTICS for sq %d' % (clen * 2 + 1)
+    print 'mean   :', numpy.mean(ctgt)
+    print 'max    :', numpy.amax(ctgt)
+    print 'min    :', numpy.amin(ctgt)
+    print 'stddev :', numpy.std(ctgt)
+
+
 def check_fine(cdir, cpos, check, clen):
-    global fdata
+    global fdata, logout
     cl = ((cpos[0] - check * abs(cdir[1]), cpos[0] + check * abs(cdir[1]) + 1), 
           (cpos[1] - check * abs(cdir[0]), cpos[1] + check * abs(cdir[0]) + 1))
     cavg = 0
     cdiff = ()
+    logout.write("center (%d, %d) range (%d - %d)\n" % (cpos[0], cpos[1],
+                 clen[0], clen[1] - 1))
     for shift in range(clen[0], clen[1]):
-        cavg_new = numpy.mean(
-            fdata[cl[0][0] + shift * cdir[0] : cl[0][1] + shift * cdir[0],
-                  cl[1][0] + shift * cdir[1] : cl[1][1] + shift * cdir[1]])
-#        print '%d : %f / %f' % (shift, cavg_new, (cavg_new - cavg))
+        cfd = fdata[cl[0][0] + shift * cdir[0] : cl[0][1] + shift * cdir[0],
+                    cl[1][0] + shift * cdir[1] : cl[1][1] + shift * cdir[1]]
+        cavg_new = numpy.mean(cfd)
         if (cavg != 0):
             cdiff = cdiff + (cavg_new - cavg,)
+            logout.write('%d %d %f %f %f\n' % (shift, shift - clen[0],
+                        cavg_new, (cavg_new - cavg), numpy.std(cfd)))
         cavg = cavg_new
     cdir = numpy.mean(cdiff)
     cdir = cdir / abs(cdir)
@@ -183,14 +212,15 @@ def check_rough(cdir, cpos, step, check):
 # copy fdata[fitsorg - size] -> data[pngorg - size]
 # fitsorg = origin at FITS image
 def draw_image(hsize, fitsorg, pngorg, size, data):
-    global fdata, fsize
+    global fdata, fsize, logout
     wid = hsize[0] * 2 + 1
     freg = fdata[fitsorg[0] : fitsorg[0] + size[0],
                  fitsorg[1] : fitsorg[1] + size[1]]
     fmin = numpy.amin(freg)
     fmax = numpy.amax(freg)
     cl = wid * pngorg[1] + pngorg[0]
-    print 'Color:', fmin, fmax, fitsorg, size
+    logout.write("# Color: %d - %d (%d, %d) (%d, %d)\n\n" % (fmin,
+                fmax, fitsorg[0], fitsorg[1], size[0], size[1]))
     for cy in range(0, len(freg[0])):
         for cx in range(0, len(freg)):
             val = make_color(freg[cx][cy], fmin, fmax)
@@ -281,15 +311,18 @@ def save_png(hsize, data):
     return 0
 
 def open_fits(fname):
-    global ffits, fdata, fsize
+    global ffits, fdata, fsize, logout
     ffits = pyfits.open(fname)
     fdata = ffits[0].data
     fsize = fdata.shape
+    logout = open(sys.argv[1] + '.log', 'w')
 
 def close_fits():
-    global ffits
+    global ffits, logout
     # need to do something?
     ffits.close()
+    logout.flush()
+    logout.close()
 
 if __name__ == "__main__":
     if (len(sys.argv) != 2):
