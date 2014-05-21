@@ -8,15 +8,19 @@ import math
 from PIL import Image
 
 chwid = 10     # check pixel width (half)
-rgstep = 5    # rough check step
+rgstep = 10    # rough check step
 chthr = 0.1   # threshold for change detection by average
+detsat = 65000 # saturation detection threshold
 
 lconv = 0.1044  # um/pixel
+
+glog = 'glog.dat'   # global log file
 
 ffits = 0
 fdata = 0
 fsize = ()
 logout = 0
+cntsat = 0
 
 pngborder = (255, 0, 0)
 pngindig  = (0, 0, 255)
@@ -31,13 +35,13 @@ def main():
     cpos = (fsize[0] / 2, fsize[1] / 2)
     calc_stat(cpos, chwid)
 #    print 'X+'
-    cret_xp= check_rough((1, 0), cpos, rgstep, chwid)
+    cret_xp = check_rough2((1, 0), cpos, rgstep, chwid)
 #    print 'X-'
-    cret_xm = check_rough((-1, 0), cpos, rgstep, chwid)
+    cret_xm = check_rough2((-1, 0), cpos, rgstep, chwid)
 #    print 'Y+'
-    cret_yp = check_rough((0, 1), cpos, rgstep, chwid)
+    cret_yp = check_rough2((0, 1), cpos, rgstep, chwid)
 #    print 'Y-'
-    cret_ym = check_rough((0, -1), cpos, rgstep, chwid)
+    cret_ym = check_rough2((0, -1), cpos, rgstep, chwid)
     emax = numpy.amin((len(cret_xp), len(cret_xm), len(cret_yp), len(cret_ym)))
     if emax > 3:
         emax = 3
@@ -79,6 +83,7 @@ def main():
     draw_edge(pnghsize, pngls, pngst, pngdata)
 # fine search
     cfine = ()
+    fglog = open(glog, 'a')
     for cid in range(0, emax):
         logout_head('X+', cid)
         cl_x = clen[cid][0][1] - clen[cid][0][0]
@@ -119,6 +124,10 @@ def main():
         print 'DET : dia x = %.1f (%.2f um), y = %.1f (%.2f um) at (%.2f, %.2f)' % (
             cfine[cid][0], cfine[cid][0] * lconv, cfine[cid][1], 
             cfine[cid][1] * lconv, cfine[cid][2], cfine[cid][3])
+        fglog.write("%.1f\t%.1f\t%.2f\t%.2f\t" % (cfine[cid][0], cfine[cid][1], 
+                    cfine[cid][2], cfine[cid][3]))
+    for cid in range(emax, 3):
+        fglog.write("0.0\t0.0\t0.0\t0.0\t")
     if emax > 1:
         print 'De-center'
         print 'core-clad : (%.2f, %.2f) / (%.2f, %.2f) um' % (
@@ -131,8 +140,14 @@ def main():
           (cfine[0][2] - cfine[2][2]) * lconv,
           (cfine[0][3] - cfine[2][3]) * lconv)
     close_fits()
+    if (cntsat > 0):
+        print 'Saturation detected (%d)' % (cntsat)
+    fglog.write("%d\t" % cntsat)
     draw_center(pnghsize, pngdata)
     save_png(pnghsize, pngdata)
+    fglog.write("\n")
+    fglog.flush()
+    fglog.close()
 
 def print_config():
     print 'chwid %d, rgstep %d, chthr %f, lconv %f' % (chwid, rgstep, chthr, lconv)
@@ -179,8 +194,48 @@ def check_fine(cdir, cpos, check, clen):
             cid = shift
     return cid + clen[0] + 1
 
+def check_rough2(cdir, cpos, step, check):
+    global fdata, chthr, detsat, cntsat
+    if ((abs(cdir[0]) + abs(cdir[1])) != 1):
+        return ()
+    cl = ()
+    if (cdir[0] == 1):
+        cl = cl + ((cpos[0] - step, cpos[0]), (cpos[1] - check, cpos[1] + check + 1))
+    elif (cdir[0] == -1):
+        cl = cl + ((cpos[0], cpos[0] + step), (cpos[1] - check, cpos[1] + check + 1))
+    elif (cdir[1] == 1):
+        cl = cl + ((cpos[0] - check, cpos[0] + check + 1), (cpos[1] - step, cpos[1]))
+    else:
+        cl = cl + ((cpos[0] - check, cpos[0] + check + 1), (cpos[1], cpos[1] + step))
+    cavg_orig = numpy.mean(fdata[cl[0][0] : cl[0][1], cl[1][0] : cl[1][1]])
+    cret = ()
+    shift = 0
+    cavg = cavg_orig
+    start = 0
+    shift_max = abs(cdir[0] * cpos[0] + cdir[1] * cpos[1]) - 1
+    while shift < shift_max:
+        cavg_new = numpy.mean(
+            fdata[cl[0][0] + shift * cdir[0] : cl[0][1] + shift * cdir[0],
+                  cl[1][0] + shift * cdir[1] : cl[1][1] + shift * cdir[1]])
+        if (cavg_new > detsat):
+            cntsat = cntsat + 1
+        if (abs(cavg_new - cavg) / cavg > chthr):
+            if (start == 0):
+#                print '++ %d (old %f / new %f / %f %f)' % (shift, cavg, 
+#                     cavg_new, cavg - cavg_new, (cavg - cavg_new) / cavg)
+                start = shift
+#            else:
+#                print '+= %d (old %f / new %f / %f %f)' % (shift, cavg, 
+#                     cavg_new, cavg - cavg_new, (cavg - cavg_new) / cavg)
+        elif (start != 0):
+            cret = cret + ((start - step, shift), )
+            start = 0
+        cavg = cavg_new
+        shift += step
+    return cret
+
 def check_rough(cdir, cpos, step, check):
-    global fdata, chthr
+    global fdata, chthr, detsat, cntsat
     cl = ((cpos[0] - check, cpos[0] + check + 1),
           (cpos[1] - check, cpos[1] + check + 1))
     cavg_orig = numpy.mean(fdata[cl[0][0] : cl[0][1], cl[1][0] : cl[1][1]])
@@ -194,6 +249,8 @@ def check_rough(cdir, cpos, step, check):
         cavg_new = numpy.mean(
             fdata[cl[0][0] + shift * cdir[0] : cl[0][1] + shift * cdir[0],
                   cl[1][0] + shift * cdir[1] : cl[1][1] + shift * cdir[1]])
+        if (cavg_new > detsat):
+            cntsat = cntsat + 1
         if (abs(cavg_new - cavg) / cavg > chthr):
             if (start == 0):
 #                print '++ %d (old %f / new %f / %f %f)' % (shift, cavg, 

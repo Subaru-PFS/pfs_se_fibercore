@@ -31,6 +31,8 @@ for both X and Y, per each boundary (up to 3), and starts second phase
 * chwid : region width (1 + 2 * chwid) to calcurate average (both axis for rough)
 * rgstep : step size to move region center during rough phase
 * chthr : threshold to mark as transitional region during rough phase
+* detsat : saturation detection threshold
+* glog : global log file (adding one line per run)
 * lconv : conversion parameter of um/pixel
 * pngborder : border color of each cripped image
 * pngindig : tick color
