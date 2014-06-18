@@ -83,6 +83,7 @@ def main():
     draw_edge(pnghsize, pngls, pngst, pngdata)
 # fine search
     cfine = ()
+    cfinex = ()
     fglog = open(glog, 'a')
     for cid in range(0, emax):
         logout_head('X+', cid)
@@ -93,37 +94,65 @@ def main():
                 (cposd[cid][0] + clen[cid][0][0], cposd[cid][1] - chwid), 
                 (pnghsize[0] + pngst[cid][0] + 1, pnghsize[1] - chwid),
                 (cl_x, chwid * 2 + 1), pngdata)
+        logout.write('\n')
         logout_head('X-', cid)
         cf_xm = check_fine((-1, 0), cposd[cid], chwid, clen[cid][0])
         draw_image(pnghsize,
                 (cposd[cid][0] - clen[cid][0][0] - cl_x, cposd[cid][1] - chwid),
                 (pnghsize[0] - pngst[cid][0] - cl_x, pnghsize[1] - chwid),
                 (cl_x, chwid * 2 + 1), pngdata)
+        logout.write('\n')
         logout_head('Y+', cid)
         cf_yp = check_fine((0, 1), cposd[cid], chwid, clen[cid][1])
         draw_image(pnghsize,
                 (cposd[cid][0] - chwid, cposd[cid][1] + clen[cid][1][0]),
                 (pnghsize[0] - chwid, pnghsize[1] + pngst[cid][1] + 1), 
                 (chwid * 2 + 1, cl_y), pngdata)
+        logout.write('\n')
         logout_head('Y-', cid)
         cf_ym = check_fine((0, -1), cposd[cid], chwid, clen[cid][1])
         draw_image(pnghsize,
                 (cposd[cid][0] - chwid, cposd[cid][1] - clen[cid][1][0] - cl_y),
                 (pnghsize[0] - chwid, pnghsize[1] - pngst[cid][1] - cl_y), 
                 (chwid * 2 + 1, cl_y), pngdata)
+        logout.write('\n')
+        logout_head('X+Y+', cid)
+        cf_pp = check_fine_cross((1, 1), cposd[cid], chwid, clen[cid][0])
+        logout.write('\n')
+        logout_head('X+Y-', cid)
+        cf_pm = check_fine_cross((1, -1), cposd[cid], chwid, clen[cid][0])
+        logout.write('\n')
+        logout_head('X-Y+', cid)
+        cf_mp = check_fine_cross((-1, 1), cposd[cid], chwid, clen[cid][0])
+        logout.write('\n')
+        logout_head('X-Y-', cid)
+        cf_mm = check_fine_cross((-1, -1), cposd[cid], chwid, clen[cid][0])
+        logout.write('\n')
         cf_xd = (cf_xp + cf_xm)
         cf_yd = (cf_yp + cf_ym)
+        cf_pd = (cf_pp + cf_mm)
+        cf_md = (cf_pm + cf_mp)
         cf_xc = (cf_xp - cf_xm) / 2
         cf_yc = (cf_yp - cf_ym) / 2
+        cf_pc = (cf_pp - cf_mm) / 2
+        cf_mc = (cf_pm - cf_mp) / 2
+        print 'DET : %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f' % (
+                cf_xp, cf_pp, cf_yp, cf_mp, cf_xm, cf_mm, cf_ym, cf_pm)
         draw_detect(pnghsize, pngls, pngst, pngdata, cid, 
                 cf_xp - clen[cid][0][0] - 1, cf_xm - clen[cid][0][0] - 1,
                 cf_yp - clen[cid][1][0] - 1, cf_ym - clen[cid][1][0] - 1)
 #        print '%d %d %d %d' % (cf_xp, cf_xm, cf_yp, cf_ym)
         cfine = cfine + ((cf_xd, cf_yd, cf_xc + cposd[cid][0], cf_yc + cposd[cid][1]), )
+        cfinex = cfinex + ((cf_pd, cf_md,
+                    (cf_pc + cf_mc) / math.sqrt(2) + cposd[cid][0],
+                    (cf_pc - cf_mc) / math.sqrt(2) + cposd[cid][1]), )
         logout.write("\n")
-        print 'DET : dia x = %.1f (%.2f um), y = %.1f (%.2f um) at (%.2f, %.2f)' % (
+        print '   XY dia x = %.1f (%.2f um), y = %.1f (%.2f um) at (%.2f, %.2f)' % (
             cfine[cid][0], cfine[cid][0] * lconv, cfine[cid][1], 
             cfine[cid][1] * lconv, cfine[cid][2], cfine[cid][3])
+        print '      dia p = %.1f (%.2f um), m = %.1f (%.2f um) at (%.2f, %.2f)' % (
+            cfinex[cid][0], cfinex[cid][0] * lconv, cfinex[cid][1],
+            cfinex[cid][1] * lconv, cfinex[cid][2], cfinex[cid][3])
         fglog.write("%.1f\t%.1f\t%.2f\t%.2f\t" % (cfine[cid][0], cfine[cid][1], 
                     cfine[cid][2], cfine[cid][3]))
     for cid in range(emax, 3):
@@ -166,6 +195,59 @@ def calc_stat(cpos, clen):
     print 'min    :', numpy.amin(ctgt)
     print 'stddev :', numpy.std(ctgt)
 
+def check_fine_cross(cdir, cpos, check, clen):
+    global fdata, logout
+    logout.write("center (%d, %d) range (%d - %d)\n" % (cpos[0], cpos[1], 
+                 clen[0], clen[1] - 1))
+    csum = 0
+    cavg = 0
+    cdiff = ()
+    cmin = int(clen[0] / math.sqrt(2)) # cmin = cdiff[-1]
+    if (abs(cdir[0] * cdir[1]) != 1):
+        return 0
+    for shift in range(cmin, int(clen[1] / math.sqrt(2))):
+        # with center included
+        csum = 0
+        cl0 = cpos[0] + shift * cdir[0]
+        cl1 = cpos[1] + shift * cdir[1]
+        csum += fdata[cl0, cl1]
+        for cin in range(1, check + 1):
+            csum += fdata[cl0 + cin * cdir[0], cl1 - cin * cdir[1]]
+            csum += fdata[cl0 - cin * cdir[0], cl1 + cin * cdir[1]]
+#        cavg_new = csum / (check * 2 + 1)
+#        if (cavg != 0):
+#            cdiff = cdiff + (cavg_new - cavg, )
+#            logout.write('%.2f %.2f %f %f %d %d\n' % (shift * math.sqrt(2), 
+#                         shift * math.sqrt(2) - clen[0], cavg_new, 
+#                         (cavg_new - cavg), cl0, cl1))
+#        cavg = cavg_new
+#        # with no center included
+#        csum = 0
+        for cin in range(0, check):
+            csum += fdata[cl0 + (cin + 1) * cdir[0], cl1 - cin * cdir[1]]
+            csum += fdata[cl0 - cin * cdir[0], cl1 + (cin + 1) * cdir[1]]
+#        cavg_new = csum / check / 2
+#        cdiff = cdiff + (cavg_new - cavg, )
+#        logout.write('%.2f %.2f %f %f\n' % ((shift + 0.5) * math.sqrt(2),
+#                     (shift + 0.5) * math.sqrt(2) - clen[0], cavg_new,
+#                     (cavg_new - cavg)))
+        cavg_new = csum / (check * 4 + 1)
+        if (cavg != 0):
+            cdiff = cdiff + (cavg_new - cavg, )
+            logout.write('%.2f %.2f %f %f\n' % ((shift + 0.25) * math.sqrt(2),
+                     (shift + 0.25) * math.sqrt(2) - clen[0], cavg_new,
+                     (cavg_new - cavg)))
+        cavg = cavg_new
+    cdir = numpy.mean(cdiff)
+    cdir = cdir / abs(cdir)
+    cmax = 0
+    cid = 0
+    for shift in range(0, len(cdiff)):
+        if (cmax < cdiff[shift] * cdir):
+            cmax = cdiff[shift] * cdir
+            cid = shift
+#    return (cid / 2 + 0.5 + cmin) * math.sqrt(2)
+    return (cid + 0.25 + cmin) * math.sqrt(2)
 
 def check_fine(cdir, cpos, check, clen):
     global fdata, logout
@@ -228,8 +310,13 @@ def check_rough2(cdir, cpos, step, check):
 #                print '+= %d (old %f / new %f / %f %f)' % (shift, cavg, 
 #                     cavg_new, cavg - cavg_new, (cavg - cavg_new) / cavg)
         elif (start != 0):
+#            print '-- %d (old %f / new %f / %f %f)' % (shift, cavg, 
+#                     cavg_new, cavg - cavg_new, (cavg - cavg_new) / cavg)
             cret = cret + ((start - step, shift), )
             start = 0
+#        else:
+#            print '-- %d (old %f / new %f / %f %f)' % (shift, cavg, 
+#                     cavg_new, cavg - cavg_new, (cavg - cavg_new) / cavg)
         cavg = cavg_new
         shift += step
     return cret
@@ -276,7 +363,7 @@ def draw_image(hsize, fitsorg, pngorg, size, data):
     fmin = numpy.amin(freg)
     fmax = numpy.amax(freg)
     cl = wid * pngorg[1] + pngorg[0]
-    logout.write("# Color: %d - %d (%d, %d) (%d, %d)\n\n" % (fmin,
+    logout.write("# Color: %d - %d (%d, %d) (%d, %d)\n" % (fmin,
                 fmax, fitsorg[0], fitsorg[1], size[0], size[1]))
     for cy in range(0, len(freg[0])):
         for cx in range(0, len(freg)):
